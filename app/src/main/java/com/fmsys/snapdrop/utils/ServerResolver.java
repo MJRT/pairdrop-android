@@ -49,16 +49,6 @@ public final class ServerResolver {
             final List<Integer> scanPorts) {
         final LanServerScanner.LanNetwork lan = LanServerScanner.getWifiLan(context);
 
-        if (lan != null) {
-            final String cachedServer = LanDiscoveryCache.get(preferences, lan.getNetworkKey());
-            if (cachedServer != null && PairDropInstanceVerifier.isPairDropInstance(cachedServer, SAVED_SERVER_TIMEOUT_MILLIS)) {
-                return new Resolution(cachedServer, Source.DISCOVERY_CACHE);
-            }
-            if (cachedServer != null) {
-                LanDiscoveryCache.remove(preferences, lan.getNetworkKey());
-            }
-        }
-
         final LinkedHashSet<String> savedServers = new LinkedHashSet<>();
         if (preferredServer != null && !officialServer.equals(preferredServer)) {
             savedServers.add(preferredServer);
@@ -78,6 +68,14 @@ public final class ServerResolver {
         }
 
         if (lan != null) {
+            final String cachedServer = LanDiscoveryCache.get(preferences, lan.getNetworkKey());
+            if (cachedServer != null && PairDropInstanceVerifier.isPairDropInstance(cachedServer, SAVED_SERVER_TIMEOUT_MILLIS)) {
+                return new Resolution(cachedServer, Source.DISCOVERY_CACHE);
+            }
+            if (cachedServer != null) {
+                LanDiscoveryCache.remove(preferences, lan.getNetworkKey());
+            }
+
             final String discovered = LanServerScanner.scan(lan, scanPorts);
             if (discovered != null) {
                 LanDiscoveryCache.put(preferences, lan.getNetworkKey(), discovered);
