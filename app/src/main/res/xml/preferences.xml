@@ -10,6 +10,12 @@
             android:key="@string/pref_baseurl"
             android:summary="%s"
             android:title="@string/baseurl_title" />
+        <EditTextPreference
+            android:defaultValue="80,3000"
+            android:key="@string/pref_lan_scan_ports"
+            android:summary="@string/lan_scan_ports_summary"
+            android:title="@string/lan_scan_ports_title"
+            app:useSimpleSummaryProvider="true" />
         <SwitchPreferenceCompat
             android:icon="@drawable/pref_notifications"
             android:key="@string/pref_notifications"
