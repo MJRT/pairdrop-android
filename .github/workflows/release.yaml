@@ -1,0 +1,72 @@
+name: GitHub Release
+
+on:
+  push:
+    tags:
+      - 'v*-lan.*'
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Restore signing key
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+        run: |
+          test -n "$ANDROID_KEYSTORE_BASE64"
+          echo "$ANDROID_KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/pairdrop-release.jks"
+
+      - name: Build signed release APK
+        env:
+          ANDROID_KEYSTORE_FILE: ${{ runner.temp }}/pairdrop-release.jks
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          chmod +x gradlew
+          VERSION_NAME="${GITHUB_REF_NAME#v}"
+          VERSION_CODE=$((1000000 + GITHUB_RUN_NUMBER))
+          ./gradlew assembleRelease --no-daemon \
+            -PreleaseVersionName="$VERSION_NAME" \
+            -PreleaseVersionCode="$VERSION_CODE"
+          APK="$(find app/build/outputs/apk/release -maxdepth 1 -name '*.apk' -type f | head -n 1)"
+          test -n "$APK"
+          APKSIGNER="$(find "$ANDROID_HOME/build-tools" -type f -name apksigner | sort -V | tail -n 1)"
+          test -x "$APKSIGNER"
+          "$APKSIGNER" verify --verbose "$APK"
+          cp "$APK" "pairdrop-android-${GITHUB_REF_NAME}.apk"
+          sha256sum "pairdrop-android-${GITHUB_REF_NAME}.apk" > "pairdrop-android-${GITHUB_REF_NAME}.apk.sha256"
+
+      - name: Upload workflow artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: pairdrop-android-${{ github.ref_name }}
+          path: |
+            pairdrop-android-${{ github.ref_name }}.apk
+            pairdrop-android-${{ github.ref_name }}.apk.sha256
+          if-no-files-found: error
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" \
+            "pairdrop-android-${GITHUB_REF_NAME}.apk" \
+            "pairdrop-android-${GITHUB_REF_NAME}.apk.sha256" \
+            --title "$GITHUB_REF_NAME" \
+            --generate-notes
