@@ -5,7 +5,6 @@ import android.content.Context;
 import android.net.ConnectivityManager;
 import android.net.NetworkInfo;
 import android.net.wifi.WifiManager;
-import android.util.Log;
 
 import androidx.core.util.Consumer;
 import androidx.fragment.app.Fragment;
@@ -13,9 +12,6 @@ import androidx.fragment.app.Fragment;
 import com.fmsys.snapdrop.R;
 import com.fmsys.snapdrop.SnapdropApplication;
 import com.google.android.material.snackbar.Snackbar;
-
-import org.jsoup.Jsoup;
-import org.jsoup.nodes.Document;
 
 import java.lang.reflect.Method;
 import java.util.concurrent.Executors;
@@ -66,25 +62,16 @@ public class NetworkUtils {
         dialog.setContentView(R.layout.progress_dialog);
 
         final Future<?> request = Executors.newSingleThreadExecutor().submit(() -> {
-            try {
-                final Document doc = Jsoup.connect(url).get();
-                fragment.requireActivity().runOnUiThread(() -> {
-                    if (doc.selectFirst("x-peers") != null) {
-                        // website seems to be similar to snapdrop... The check could be improved of course.
-                        result.accept(true);
-                        Snackbar.make(fragment.requireView(), R.string.baseurl_instance_verified, Snackbar.LENGTH_LONG).show();
-                    } else {
-                        Snackbar.make(fragment.requireView(), R.string.baseurl_no_snapdrop_instance, Snackbar.LENGTH_LONG).show();
-                        result.accept(false);
-                    }
-                });
-            } catch (Exception e) {
-                Log.e("BaseUrlChange", "Failed to verify Snapdrop instance: " + e.getMessage());
-                fragment.requireActivity().runOnUiThread(() -> {
-                    Snackbar.make(fragment.requireView(), R.string.baseurl_check_instance_failed, Snackbar.LENGTH_LONG).show();
+            final boolean supported = PairDropInstanceVerifier.isPairDropInstance(url, 5000);
+            fragment.requireActivity().runOnUiThread(() -> {
+                if (supported) {
+                    result.accept(true);
+                    Snackbar.make(fragment.requireView(), R.string.baseurl_instance_verified, Snackbar.LENGTH_LONG).show();
+                } else {
+                    Snackbar.make(fragment.requireView(), R.string.baseurl_no_snapdrop_instance, Snackbar.LENGTH_LONG).show();
                     result.accept(false);
-                });
-            }
+                }
+            });
             dialog.dismiss();
         });
 
