@@ -1,30 +1,39 @@
-name: APK Build
-on: 
+name: Android CI
+
+on:
   push:
     branches:
       - master
-
   pull_request:
   workflow_dispatch:
-  
+
+permissions:
+  contents: read
+
 jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout the code
-        uses: actions/checkout@v2
-      - name: Setup Java JDK
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Java
         uses: actions/setup-java@v4
         with:
-          distribution: 'temurin'
+          distribution: temurin
           java-version: '17'
-      - name: Build the app
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Build
         run: |
           chmod +x gradlew
-          ./gradlew build
-      - name: Upload APK
+          ./gradlew build --no-daemon
+
+      - name: Upload debug APK
         uses: actions/upload-artifact@v4
         with:
-          name: debug-apk
+          name: pairdrop-android-debug
           path: app/build/outputs/apk/debug/*.apk
           if-no-files-found: error
