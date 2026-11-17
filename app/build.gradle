@@ -1,12 +1,12 @@
-def releaseVersionName = project.findProperty("releaseVersionName") ?: "2.3.1-lan.1"
-def releaseVersionCode = (project.findProperty("releaseVersionCode") ?: "1000001") as int
-def signingKeystore = System.getenv("ANDROID_KEYSTORE_FILE")
-
 plugins {
     id 'com.android.application'
     id 'checkstyle'
     id 'com.mikepenz.aboutlibraries.plugin'
 }
+
+def releaseVersionName = project.findProperty("releaseVersionName") ?: "2.3.1-lan.1"
+def releaseVersionCode = (project.findProperty("releaseVersionCode") ?: "1000001") as int
+def signingKeystore = System.getenv("ANDROID_KEYSTORE_FILE")
 
 android {
     namespace 'com.fmsys.snapdrop'
