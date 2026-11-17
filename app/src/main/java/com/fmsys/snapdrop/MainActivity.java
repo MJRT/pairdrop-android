@@ -73,8 +73,11 @@ import com.anggrayudi.storage.file.DocumentFileUtils;
 import com.anggrayudi.storage.media.FileDescription;
 import com.anggrayudi.storage.media.MediaFile;
 import com.fmsys.snapdrop.databinding.ActivityMainBinding;
+import com.fmsys.snapdrop.utils.LanDiscoveryCache;
+import com.fmsys.snapdrop.utils.LanServerScanner;
 import com.fmsys.snapdrop.utils.NetworkUtils;
 import com.fmsys.snapdrop.utils.Nullable;
+import com.fmsys.snapdrop.utils.ServerResolver;
 import com.fmsys.snapdrop.utils.ShareUtils;
 import com.fmsys.snapdrop.utils.StateHandler;
 import com.fmsys.snapdrop.utils.ZipUtils;
@@ -86,8 +89,11 @@ import java.io.File;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.HashSet;
 import java.util.Iterator;
 import java.util.List;
+import java.util.Objects;
+import java.util.Set;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
@@ -95,6 +101,8 @@ public class MainActivity extends AppCompatActivity {
     private static final int MY_PERMISSIONS_WRITE_EXTERNAL_STORAGE = 12321;
 
     private String baseURL;
+    private String preferredBaseURL;
+    private boolean serverResolutionInProgress = false;
 
     private ActivityMainBinding binding;
     public SharedPreferences prefs;
@@ -185,9 +193,10 @@ public class MainActivity extends AppCompatActivity {
 
         prefs = PreferenceManager.getDefaultSharedPreferences(this);
 
-        baseURL = prefs.getString(getString(R.string.pref_baseurl), null);
+        preferredBaseURL = prefs.getString(getString(R.string.pref_baseurl), null);
+        baseURL = preferredBaseURL;
 
-        if (prefs.getBoolean(getString(R.string.pref_first_use), true) || baseURL == null) {
+        if (prefs.getBoolean(getString(R.string.pref_first_use), true) || preferredBaseURL == null) {
             OnboardingActivity.launchOnboarding(this);
             return; // all this doesn't make sense if we have no base URL
         }
@@ -214,7 +223,7 @@ public class MainActivity extends AppCompatActivity {
         binding.connectivityTextview.setText(isPairDrop() ? R.string.error_network_no_wifi : R.string.error_network);
         binding.retryButton.setOnClickListener(v -> {
             binding.noConnectionScreen.setVisibility(View.GONE);
-            refreshWebsite();
+            resolveStartupServer();
         });
         binding.urlChangeButton.setOnClickListener(v -> openSettingsResultLauncher.launch(OnboardingActivity.getServerSelectionIntent(this)));
 
@@ -281,7 +290,6 @@ public class MainActivity extends AppCompatActivity {
             return true;
         });
 
-        refreshWebsite();
         onNewIntent(getIntent());
 
         if ((Build.VERSION.SDK_INT >= Build.VERSION_CODES.M && Build.VERSION.SDK_INT < Build.VERSION_CODES.Q)
@@ -303,6 +311,12 @@ public class MainActivity extends AppCompatActivity {
             }
         });
         loadAnimationDrawable.start();
+
+        if (savedInstanceState == null) {
+            resolveStartupServer();
+        } else {
+            refreshWebsite();
+        }
 
     }
 
@@ -329,6 +343,9 @@ public class MainActivity extends AppCompatActivity {
         if (item.getItemId() == android.R.id.home) {
             toggleAbout();
             return true;
+        } else if (item.getItemId() == R.id.menu_scan_lan) {
+            scanLocalNetwork();
+            return true;
         } else if (item.getItemId() == R.id.menu_settings) {
             final Intent browserIntent = new Intent(MainActivity.this, SettingsActivity.class);
             openSettingsResultLauncher.launch(browserIntent);
@@ -338,6 +355,96 @@ public class MainActivity extends AppCompatActivity {
             return true;
         }
         return super.onOptionsItemSelected(item);
+    }
+
+    private void resolveStartupServer() {
+        if (serverResolutionInProgress) {
+            return;
+        }
+        serverResolutionInProgress = true;
+        state.setCurrentlyLoading(true);
+
+        final Set<String> customServers = new HashSet<>(prefs.getStringSet(
+                getString(R.string.pref_custom_servers), new HashSet<>()));
+        final List<Integer> scanPorts = getLanScanPorts();
+        final String officialServer = getString(R.string.onboarding_server_pairdrop);
+
+        executor.execute(() -> {
+            final ServerResolver.Resolution resolution = ServerResolver.resolveStartup(
+                    getApplicationContext(), prefs, preferredBaseURL, customServers, officialServer, scanPorts);
+            runOnUiThread(() -> {
+                serverResolutionInProgress = false;
+                if (isFinishing()) {
+                    return;
+                }
+                if (resolution == null) {
+                    showScreenNoConnection(false);
+                    return;
+                }
+                applyEffectiveServer(resolution.getUrl());
+                refreshWebsite();
+            });
+        });
+    }
+
+    private void scanLocalNetwork() {
+        if (serverResolutionInProgress) {
+            Snackbar.make(binding.pullToRefresh, R.string.lan_scan_running, Snackbar.LENGTH_SHORT).show();
+            return;
+        }
+
+        serverResolutionInProgress = true;
+        final Snackbar progress = Snackbar.make(binding.pullToRefresh, R.string.lan_scan_running, Snackbar.LENGTH_INDEFINITE);
+        progress.show();
+        final List<Integer> scanPorts = getLanScanPorts();
+
+        executor.execute(() -> {
+            final LanServerScanner.LanNetwork lan = LanServerScanner.getWifiLan(getApplicationContext());
+            final String discovered;
+            if (lan == null) {
+                discovered = null;
+            } else {
+                discovered = LanServerScanner.scan(lan, scanPorts);
+                if (discovered != null) {
+                    LanDiscoveryCache.put(prefs, lan.getNetworkKey(), discovered);
+                }
+            }
+
+            runOnUiThread(() -> {
+                serverResolutionInProgress = false;
+                progress.dismiss();
+                if (isFinishing()) {
+                    return;
+                }
+                if (lan == null) {
+                    Snackbar.make(binding.pullToRefresh, R.string.lan_scan_no_wifi, Snackbar.LENGTH_LONG).show();
+                } else if (discovered == null) {
+                    Snackbar.make(binding.pullToRefresh, R.string.lan_scan_not_found, Snackbar.LENGTH_LONG).show();
+                } else {
+                    applyEffectiveServer(discovered);
+                    binding.noConnectionScreen.setVisibility(View.GONE);
+                    Snackbar.make(binding.pullToRefresh, R.string.lan_scan_found, Snackbar.LENGTH_SHORT).show();
+                    refreshWebsite();
+                }
+            });
+        });
+    }
+
+    private List<Integer> getLanScanPorts() {
+        return LanServerScanner.parsePorts(prefs.getString(
+                getString(R.string.pref_lan_scan_ports), LanServerScanner.DEFAULT_PORTS));
+    }
+
+    private void applyEffectiveServer(final String url) {
+        if (url == null) {
+            return;
+        }
+        baseURL = url;
+        binding.connectivityTextview.setText(isPairDrop() ? R.string.error_network_no_wifi : R.string.error_network);
+        final ActionBar actionbar = getSupportActionBar();
+        if (actionbar != null) {
+            actionbar.setSubtitle(baseURL);
+        }
     }
 
     private void toggleAbout() {
@@ -443,12 +550,12 @@ public class MainActivity extends AppCompatActivity {
     @Override
     public void onRestart() {
         super.onRestart();
-        baseURL = prefs.getString(getString(R.string.pref_baseurl), null);
-        final ActionBar actionbar = getSupportActionBar();
-        if (actionbar != null) {
-            actionbar.setSubtitle(baseURL);
-        }
-        if (binding.webview.getUrl() == null || !binding.webview.getUrl().startsWith(baseURL)) {
+        final String updatedPreferredServer = prefs.getString(getString(R.string.pref_baseurl), null);
+        if (!Objects.equals(preferredBaseURL, updatedPreferredServer)) {
+            preferredBaseURL = updatedPreferredServer;
+            applyEffectiveServer(preferredBaseURL);
+            refreshWebsite();
+        } else if (binding.webview.getUrl() == null || !binding.webview.getUrl().startsWith(baseURL)) {
             refreshWebsite();
         }
     }

@@ -75,6 +75,13 @@
         <item>Dark</item>
     </string-array>
     <string name="baseurl_title">Change server address</string>
+    <string name="lan_scan_ports_title">LAN scan ports</string>
+    <string name="lan_scan_ports_summary">HTTP ports checked while looking for PairDrop on the local network</string>
+    <string name="lan_scan_menu">Scan local network</string>
+    <string name="lan_scan_running">Scanning local network for PairDrop…</string>
+    <string name="lan_scan_found">Local PairDrop found</string>
+    <string name="lan_scan_not_found">No PairDrop server found on the local network</string>
+    <string name="lan_scan_no_wifi">No Wi-Fi network available to scan</string>
     <string name="baseurl_not_set">Not set</string>
     <string name="baseurl_instance_verified">Instance was successfully verified</string>
     <string name="baseurl_no_snapdrop_instance">Instance doesn\'t seem to be supported</string>
