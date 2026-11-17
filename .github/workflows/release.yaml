@@ -46,6 +46,9 @@ jobs:
             -PreleaseVersionCode="$VERSION_CODE"
           APK="$(find app/build/outputs/apk/release -maxdepth 1 -name '*.apk' -type f | head -n 1)"
           test -n "$APK"
+          APKSIGNER="$(find "$ANDROID_HOME/build-tools" -type f -name apksigner | sort -V | tail -n 1)"
+          test -x "$APKSIGNER"
+          "$APKSIGNER" verify --verbose "$APK"
           cp "$APK" "pairdrop-android-${GITHUB_REF_NAME}.apk"
           sha256sum "pairdrop-android-${GITHUB_REF_NAME}.apk" > "pairdrop-android-${GITHUB_REF_NAME}.apk.sha256"
 
